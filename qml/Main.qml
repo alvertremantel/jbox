@@ -93,9 +93,12 @@ ApplicationWindow {
         anchors.fill: parent
         // Translucent panel tinted from the active color scheme, so it goes
         // dark/light/accented along with the rest of the desktop.
-        color: Qt.rgba(palette.window.r, palette.window.g, palette.window.b, 0.92)
-        radius: 10
-        border.color: Qt.rgba(palette.windowText.r, palette.windowText.g, palette.windowText.b, 0.08)
+        color: Qt.rgba(palette.window.r, palette.window.g, palette.window.b, 0.65)
+        radius: 0
+        // Opaque: KWin's blur-behind region is the window's full rectangle,
+        // so a rounded/translucent border here leaves the corners showing
+        // raw blurred wallpaper with no panel tint over them.
+        border.color: Qt.rgba(palette.mid.r, palette.mid.g, palette.mid.b, 0.75)
         border.width: 1
 
         ColumnLayout {
@@ -124,7 +127,7 @@ ApplicationWindow {
                     font.pixelSize: 16
                     selectByMouse: true
                     background: Rectangle {
-                        color: Qt.rgba(palette.windowText.r, palette.windowText.g, palette.windowText.b, 0.04)
+                        color: Qt.rgba(palette.shadow.r, palette.shadow.g, palette.shadow.b, 0.80)
                         border.color: input.activeFocus
                             ? Qt.rgba(palette.highlight.r, palette.highlight.g, palette.highlight.b, 0.6)
                             : Qt.rgba(palette.windowText.r, palette.windowText.g, palette.windowText.b, 0.06)
@@ -132,7 +135,7 @@ ApplicationWindow {
                         radius: 6
                     }
                     color: palette.text
-                    placeholderTextColor: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.55)
+                    placeholderTextColor: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.75)
 
                     // Keep the input focused whenever the window is shown.
                     onActiveFocusChanged: {
