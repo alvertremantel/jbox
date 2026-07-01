@@ -108,7 +108,7 @@ ApplicationWindow {
                 TextField {
                     id: input
                     Layout.fillWidth: true
-                    placeholderText: "Type a command or alias…  (Enter to run, Esc to hide)"
+                    placeholderText: "Type a command…  Enter=terminal · Shift+Enter=capture · Esc=hide"
                     font.pixelSize: 16
                     selectByMouse: true
                     background: Rectangle {
@@ -135,6 +135,16 @@ ApplicationWindow {
                     }
 
                     Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            if (event.modifiers & Qt.ShiftModifier) {
+                                _execute(true)   // Shift+Enter → capture
+                            } else {
+                                _execute(false)  // plain Enter → terminal
+                            }
+                            event.accepted = true
+                            return
+                        }
+
                         if (event.key === Qt.Key_Escape) {
                             root.hide()
                             event.accepted = true
@@ -167,16 +177,6 @@ ApplicationWindow {
                             }
                             event.accepted = true
                         }
-                    }
-
-                    onAccepted: {
-                        var toRun = input.text.trim()
-                        if (toRun.length === 0) return
-                        backend.run(toRun)
-                        input.text = ""
-                        root.selectedSuggestion = -1
-                        root.visibleSuggestions = []
-                        root.hide()
                     }
                 }
             }
@@ -308,5 +308,21 @@ ApplicationWindow {
         var history = backend.suggestHistory(q)
         root.visibleSuggestions = aliases.concat(history)
         root.selectedSuggestion = root.visibleSuggestions.length > 0 ? 0 : -1
+    }
+
+    function _execute(capture) {
+        var toRun = input.text.trim()
+        if (toRun.length === 0) return
+        if (capture) {
+            backend.runCapture(toRun)
+            // Stay visible so the user can see the captured output.
+        } else {
+            backend.run(toRun)
+            // run() launches a terminal window; hide jbox.
+            root.hide()
+        }
+        input.text = ""
+        root.selectedSuggestion = -1
+        root.visibleSuggestions = []
     }
 }

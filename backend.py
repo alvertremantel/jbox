@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -212,6 +213,76 @@ class AliasesModel(QAbstractListModel):
 
 
 # ---------------------------------------------------------------------------
+# Terminal emulator detection
+# ---------------------------------------------------------------------------
+
+# Each tuple is (binary_name, [arg_list_before_command]).
+# The command itself (e.g. "bash -lc '...'") is appended after these
+# arguments. We try them in order and cache the first that exists on PATH.
+_TERMINAL_CANDIDATES: list[tuple[str, list[str]]] = [
+    ("konsole", ["-e"]),  # KDE:  konsole -e bash -lc "..."
+    (
+        "gnome-terminal",
+        ["--wait", "--"],
+    ),  # GNOME: gnome-terminal --wait -- bash -lc "..."
+    ("xfce4-terminal", ["-e"]),  # XFCE:  xfce4-terminal -e bash -lc "..."
+    ("alacritty", ["-e"]),  # alacritty -e bash -lc "..."
+    ("kitty", ["--"]),  # kitty -- bash -lc "..."
+    ("wezterm", ["start", "--"]),  # wezterm start -- bash -lc "..."
+    ("foot", ["--"]),  # foot -- bash -lc "..."
+    ("tilix", ["-e"]),  # tilix -e bash -lc "..."
+    ("terminator", ["-e"]),  # terminator -e bash -lc "..."
+    ("xterm", ["-e"]),  # xterm -e bash -lc "..."
+    ("uxterm", ["-e"]),
+    ("rxvt", ["-e"]),
+    ("urxvt", ["-e"]),
+]
+
+
+def _find_terminal() -> tuple[str, list[str]] | None:
+    """Return the first available terminal emulator and its lead-in args, or None."""
+    # Try Debian/Ubuntu's preferred alternative first.
+    x_term = shutil.which("x-terminal-emulator")
+    if x_term:
+        # x-terminal-emulator is almost always a symlink to the actual
+        # terminal; for arguments, assume the common "-e" convention.
+        return (x_term, ["-e"])
+
+    for name, args in _TERMINAL_CANDIDATES:
+        if shutil.which(name):
+            return (name, args)
+    return None
+
+
+# Cache at import time so we don't walk PATH on every command.
+_TERMINAL: tuple[str, list[str]] | None = _find_terminal()
+
+
+def _launch_terminal(command: str, shell: str) -> int:
+    """Launch `command` inside a terminal emulator window.
+
+    The command is run inside `bash -lc` so the user's login shell aliases
+    are available. Returns -1 if no terminal emulator is available, 0 on
+    successful launch (without waiting for the command to finish).
+    """
+    if _TERMINAL is None:
+        return -1
+    term, lead = _TERMINAL
+    argv = [term, *lead, shell, "-lc", command]
+    try:
+        subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return 0
+    except FileNotFoundError:
+        return -1
+
+
+# ---------------------------------------------------------------------------
 # Backend
 # ---------------------------------------------------------------------------
 
@@ -226,9 +297,9 @@ def _now() -> int:
 class LauncherBackend(QObject):
     """The single QObject exposed to QML.
 
-    The QML side calls `run(query)` to execute a command, listens to
-    `statusChanged` for transient feedback, and can browse the `history`
-    and `aliases` models.
+    The QML side calls `run(query)` (launches in a terminal emulator) or
+    `runCapture(query)` (captures output inline), listens to `statusChanged`
+    for transient feedback, and can browse the `history` and `aliases` models.
     """
 
     statusChanged = Signal(str)  # short status string ("running: …", "exit 0: …")
@@ -240,6 +311,7 @@ class LauncherBackend(QObject):
         super().__init__()
         self._aliases = AliasesModel(aliases_file)
         self._history = HistoryModel(history_file)
+        self._shell: str = os.environ.get("SHELL", "/bin/bash")
 
     # --- Properties exposed to QML -----------------------------------------
 
@@ -253,7 +325,16 @@ class LauncherBackend(QObject):
 
     @Property(str, constant=True)
     def shell(self) -> str:  # type: ignore[override]
-        return os.environ.get("SHELL", "/bin/bash")
+        return self._shell
+
+    _has_terminal_cache: bool | None = None
+
+    @Property(bool, constant=True)
+    def hasTerminal(self) -> bool:  # type: ignore[override]
+        """Whether a supported terminal emulator was found at startup."""
+        if self._has_terminal_cache is None:
+            self._has_terminal_cache = _TERMINAL is not None
+        return self._has_terminal_cache
 
     # --- Slots called from QML ---------------------------------------------
 
@@ -265,24 +346,35 @@ class LauncherBackend(QObject):
 
     @Slot(str)
     def run(self, command: str) -> None:
-        """Fire-and-forget. Doesn't block the GUI thread."""
+        """Launch `command` in a terminal emulator window.
+
+        The terminal pops up immediately; jbox hides itself and doesn't
+        wait for the command to complete. Falls back to fire-and-forget
+        background execution if no terminal is available.
+        """
         command = command.strip()
         if not command:
             return
         resolved = self._aliases.resolve(command) or command
-        self._run(resolved, capture=False)
+        rc = _launch_terminal(resolved, self._shell)
+        if rc < 0:
+            # No terminal available — fall back to silent background launch
+            # so the command at least runs.
+            self._run_background(resolved)
+        else:
+            self.commandStarted.emit(command)
+            self.commandFinished.emit(-1)
         self._history.add(command)
 
     @Slot(str)
     def runCapture(self, command: str) -> None:
-        """Synchronous, with a short timeout, and emit captured output."""
+        """Run `command` synchronously with a timeout, emit captured output."""
         command = command.strip()
         if not command:
             return
         resolved = self._aliases.resolve(command) or command
-        rc = self._run(resolved, capture=True, timeout=10.0)
+        rc = self._run_capture(resolved, timeout=10.0)
         self._history.add(command)
-        # Status reflects success/failure of the capture pass.
         if rc == 0:
             self.statusChanged.emit(f"ok: {resolved}")
         else:
@@ -308,45 +400,47 @@ class LauncherBackend(QObject):
 
     # --- Internal ----------------------------------------------------------
 
-    def _run(self, command: str, *, capture: bool, timeout: float | None = None) -> int:
-        """Execute `command` in a login shell so user aliases are loaded.
-
-        Returns the exit code, or -1 on launch failure.
-        """
-        shell = os.environ.get("SHELL", "/bin/bash")
-        # `bash -lc` sources /etc/profile and ~/.bash_profile, then ~/.bashrc
-        # (depending on the distro's default .bashrc setup). That's how the
-        # user's existing aliases become available to us.
-        argv = [shell, "-lc", command]
+    def _run_background(self, command: str) -> int:
+        """Fire-and-forget: detach the process, discard output."""
+        argv = [self._shell, "-lc", command]
         self.commandStarted.emit(command)
         self.statusChanged.emit(f"running: {command}")
         try:
-            if capture:
-                result = subprocess.run(
-                    argv,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
-                    start_new_session=True,
-                )
-                tail = (result.stdout + result.stderr).strip().splitlines()
-                # Keep only the last 32 lines so we don't blow up the UI.
-                self.outputReceived.emit(
-                    "\n".join(tail[-32:]) if tail else "(no output)"
-                )
-                self.commandFinished.emit(result.returncode)
-                return result.returncode
-            else:
-                subprocess.Popen(
-                    argv,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
-                # We don't know the exit code; report a placeholder so QML can
-                # clear its "running…" indicator.
-                self.commandFinished.emit(-1)
-                return 0
+            subprocess.Popen(
+                argv,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            self.commandFinished.emit(-1)
+            return 0
+        except FileNotFoundError as exc:
+            self.outputReceived.emit(f"error: {exc}")
+            self.statusChanged.emit(f"error: {exc}")
+            self.commandFinished.emit(-1)
+            return -1
+
+    def _run_capture(self, command: str, *, timeout: float | None = None) -> int:
+        """Execute `command` in a login shell and capture stdout/stderr.
+
+        Returns the exit code, or -1 on launch failure/timout.
+        """
+        argv = [self._shell, "-lc", command]
+        self.commandStarted.emit(command)
+        self.statusChanged.emit(f"running: {command}")
+        try:
+            result = subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                start_new_session=True,
+            )
+            tail = (result.stdout + result.stderr).strip().splitlines()
+            self.outputReceived.emit("\n".join(tail[-32:]) if tail else "(no output)")
+            self.commandFinished.emit(result.returncode)
+            return result.returncode
         except subprocess.TimeoutExpired:
             self.outputReceived.emit(f"error: timed out after {timeout}s")
             self.commandFinished.emit(-1)
