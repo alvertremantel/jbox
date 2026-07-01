@@ -1,5 +1,6 @@
 #include "terminal.h"
 
+#include <QFileInfo>
 #include <QProcess>
 #include <QStandardPaths>
 #include <array>
@@ -57,13 +58,22 @@ std::optional<Candidate> find() {
     return cached;
 }
 
+QStringList commandArgs(const QString &shell, const QString &command) {
+    QStringList args;
+    if (QFileInfo(shell).fileName() == QStringLiteral("bash")) {
+        args << QStringLiteral("-O") << QStringLiteral("expand_aliases");
+    }
+    args << QStringLiteral("-lc") << command;
+    return args;
+}
+
 bool launch(const QString &command, const QString &shell) {
     const std::optional<Candidate> term = find();
     if (!term) {
         return false;
     }
     QStringList args = term->leadArgs;
-    args << shell << "-lc" << command;
+    args << shell << commandArgs(shell, command);
     return QProcess::startDetached(term->exe, args);
 }
 

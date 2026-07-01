@@ -70,7 +70,7 @@ void LauncherBackend::run(const QString &command) {
 void LauncherBackend::runBackground(const QString &command) {
     emit commandStarted(command);
     emit statusChanged(QStringLiteral("running: %1").arg(command));
-    if (QProcess::startDetached(m_shell, {"-lc", command})) {
+    if (QProcess::startDetached(m_shell, Terminal::commandArgs(m_shell, command))) {
         emit commandFinished(-1);
     } else {
         const QString msg = QStringLiteral("error: failed to launch shell");
@@ -136,7 +136,7 @@ void LauncherBackend::runCapture(const QString &command) {
                 m_captureProcess = nullptr;
             });
 
-    proc->start(m_shell, {"-lc", resolved});
+    proc->start(m_shell, Terminal::commandArgs(m_shell, resolved));
 
     QTimer::singleShot(kCaptureTimeoutMs, proc, [this, proc] {
         if (m_captureProcess == proc) {
