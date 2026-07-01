@@ -1,17 +1,5 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.eggs/
+# CMake build output
 build/
-dist/
-
-# Virtualenv
-.venv/
-venv/
-
-# uv
-uv.lock
 
 # Editor / OS
 .idea/

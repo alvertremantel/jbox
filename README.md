@@ -16,10 +16,13 @@ hide.
 ## Features
 
 - **KDE look and feel** — uses the `org.kde.desktop` QtQuick.Controls
-  style for a Breeze-flavored appearance; falls back gracefully on
-  systems without the `qqc2-desktop-style` package installed.
+  style for a Breeze-flavored appearance (requires the
+  `qqc2-desktop-style` package; pass `--style Fusion` or set
+  `QT_QUICK_CONTROLS_STYLE=Fusion` if it isn't installed).
 - **Translucent, frameless** — sits on your Plasma desktop without
-  feeling like a dialog.
+  feeling like a dialog. Panel colors track your active KDE color scheme
+  (`SystemPalette`), and KWin blur-behind is enabled so it reads as neutral
+  Breeze grey over any wallpaper, the same as KRunner and the panels.
 - **Bottom-left by default** — pinned to the primary screen, 16px
   margin. Repositions on resolution or screen changes.
 - **Runs through your shell** — commands are executed with
@@ -35,25 +38,35 @@ hide.
 
 ## Install
 
+Build dependencies (Fedora):
+
+```sh
+sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel cmake ninja-build gcc-c++ kf6-qqc2-desktop-style kf6-kwindowsystem-devel
+```
+
+Debian/Ubuntu equivalents: `qt6-base-dev qt6-declarative-dev
+qml6-module-qtquick-controls2 kf6-kwindowsystem-dev` (Debian package name may
+vary; look for `libkf6windowsystem-dev`). Arch: `qt6-base qt6-declarative
+kwindowsystem`.
+
 ```sh
 # from this directory
-uv venv -p 3.12 .venv
-. .venv/bin/activate
-uv pip install -e .
+cmake --preset default
+cmake --build --preset default
 
 # run
-jbox
+./build/jbox
 ```
 
-Or, if you'd rather not install the project, just install PySide6 and
-invoke the script directly:
+To install for your user — binary to `~/.local/bin`, plus a `.desktop`
+entry so jbox shows up in KRunner/the app menu:
 
 ```sh
-uv run --with PySide6 python main.py
+./install.sh
 ```
 
-> The PySide6 wheels currently cap at Python 3.13, so pin the venv to
-> 3.12 as shown above.
+Safe to re-run any time you rebuild; it clears out its own previous install
+first, so there's no manual cleanup between iterations.
 
 ## Bind a key
 
@@ -61,7 +74,8 @@ In KDE Plasma: *System Settings → Shortcuts → Custom Shortcuts → Edit →
 New → Global Shortcut → Command/URL*. Set:
 
 - **Trigger**: e.g. `Super+R`, `F12`, `Alt+Space` — whatever you like.
-- **Action**: `jbox` (or the absolute path to the venv's `jbox` binary).
+- **Action**: `jbox` (if installed to your `$PATH`) or the absolute
+  path to the built binary, e.g. `~/dev/gen/tools/jbox/build/jbox`.
 
 Plasma will then start jbox the first time, and every subsequent press
 toggles the existing instance.
@@ -88,9 +102,9 @@ Aliases live in `~/.config/jbox/aliases.json` as a JSON array:
 ]
 ```
 
-`backend.AliasesModel.upsert(name, command, description)` is exposed
-on the QML side, so adding a small "manage aliases" pane is a v2
-feature (see *Future* below).
+`backend.aliases.upsert(name, command, description)` is exposed on
+the QML side, so adding a small "manage aliases" pane is a v2 feature
+(see *Future* below).
 
 ## History
 
@@ -102,10 +116,19 @@ by hand; jbox will pick the changes up on next launch.
 
 ```
 .
-├── main.py            # entry point, single-instance IPC, app setup
-├── backend.py         # QObject + models for history, aliases, exec
-├── qml/Main.qml       # the UI (translucent, frameless, bottom-left)
-├── pyproject.toml     # project metadata + dep
+├── CMakeLists.txt         # build definition
+├── CMakePresets.json      # `default`/`release` configure+build presets
+├── install.sh             # build + user-local install (~/.local/bin + .desktop entry)
+├── src/
+│   ├── main.cpp           # entry point, CLI parsing, app setup
+│   ├── launcherbackend.*  # QObject exposed to QML as `backend`
+│   ├── historymodel.*     # history list model + persistence
+│   ├── aliasesmodel.*     # aliases list model + persistence
+│   ├── jsonstore.*        # shared atomic JSON read/write helpers
+│   ├── terminal.*         # terminal emulator detection + launch
+│   ├── ipcserver.*        # single-instance IPC (QLocalServer/Socket)
+│   └── windowcontroller.* # show/hide/toggle for the QML root window
+├── qml/Main.qml           # the UI (translucent, frameless, bottom-left)
 ├── README.md
 └── .gitignore
 ```

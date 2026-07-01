@@ -4,8 +4,11 @@ import QtQuick.Layouts
 import QtQuick.Window
 import QtQml
 
-// Bottom-left, frameless, translucent launcher. The KDE look is provided by
-// the `org.kde.desktop` QtQuick.Controls style, which we set in main.py.
+// Bottom-left, frameless, translucent launcher. The `org.kde.desktop`
+// QtQuick.Controls style (set in main.cpp) gives native control chrome that
+// tracks the OS's Application Style; the SystemPalette below tracks colors
+// from the OS's Global Theme (dark/light + accent). Both matter and are
+// independent settings in KDE — don't hard-code colors here.
 ApplicationWindow {
     id: root
 
@@ -59,6 +62,15 @@ ApplicationWindow {
         onTriggered: _reposition()
     }
 
+    // Tracks the live KDE color scheme (Global Theme), independent of the
+    // QQC2 control style (Application Style, set via --style). Panel/text
+    // colors below derive from this instead of being hard-coded, so jbox
+    // follows dark/light + accent-color changes like any other KDE app.
+    SystemPalette {
+        id: palette
+        colorGroup: SystemPalette.Active
+    }
+
     // --- State ------------------------------------------------------------
     property int selectedSuggestion: -1
     property var visibleSuggestions: []
@@ -79,11 +91,11 @@ ApplicationWindow {
     Rectangle {
         id: panel
         anchors.fill: parent
-        // Translucent dark panel; a real "KDE" app would pick this from the
-        // theme, but a hard-coded translucent value keeps it predictable.
-        color: Qt.rgba(0.10, 0.11, 0.13, 0.92)
+        // Translucent panel tinted from the active color scheme, so it goes
+        // dark/light/accented along with the rest of the desktop.
+        color: Qt.rgba(palette.window.r, palette.window.g, palette.window.b, 0.92)
         radius: 10
-        border.color: Qt.rgba(1, 1, 1, 0.08)
+        border.color: Qt.rgba(palette.windowText.r, palette.windowText.g, palette.windowText.b, 0.08)
         border.width: 1
 
         ColumnLayout {
@@ -99,7 +111,7 @@ ApplicationWindow {
 
                 Label {
                     text: "❯"
-                    color: "#9ece6a"
+                    color: palette.highlight
                     font.pixelSize: 18
                     font.family: "monospace"
                     Layout.alignment: Qt.AlignVCenter
@@ -112,15 +124,15 @@ ApplicationWindow {
                     font.pixelSize: 16
                     selectByMouse: true
                     background: Rectangle {
-                        color: Qt.rgba(1, 1, 1, 0.04)
+                        color: Qt.rgba(palette.windowText.r, palette.windowText.g, palette.windowText.b, 0.04)
                         border.color: input.activeFocus
-                            ? Qt.rgba(0.62, 0.76, 0.94, 0.6)
-                            : Qt.rgba(1, 1, 1, 0.06)
+                            ? Qt.rgba(palette.highlight.r, palette.highlight.g, palette.highlight.b, 0.6)
+                            : Qt.rgba(palette.windowText.r, palette.windowText.g, palette.windowText.b, 0.06)
                         border.width: 1
                         radius: 6
                     }
-                    color: "#e8eef5"
-                    placeholderTextColor: "#8a93a3"
+                    color: palette.text
+                    placeholderTextColor: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.55)
 
                     // Keep the input focused whenever the window is shown.
                     onActiveFocusChanged: {
@@ -198,14 +210,16 @@ ApplicationWindow {
                     highlighted: index === root.selectedSuggestion
                     background: Rectangle {
                         color: highlighted
-                            ? Qt.rgba(0.62, 0.76, 0.94, 0.18)
+                            ? Qt.rgba(palette.highlight.r, palette.highlight.g, palette.highlight.b, 0.25)
                             : "transparent"
                     }
                     contentItem: RowLayout {
                         spacing: 8
                         Label {
                             text: modelData.command !== undefined ? "★" : "↻"
-                            color: modelData.command !== undefined ? "#bb9af7" : "#7aa2f7"
+                            color: modelData.command !== undefined
+                                ? palette.highlight
+                                : Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.7)
                             font.pixelSize: 12
                             Layout.preferredWidth: 16
                         }
@@ -214,7 +228,7 @@ ApplicationWindow {
                             text: modelData.command !== undefined
                                 ? (modelData.name + "  →  " + modelData.command)
                                 : (modelData.command + "  (" + modelData.count + "×)")
-                            color: "#cdd6f4"
+                            color: palette.text
                             font.pixelSize: 13
                             elide: Text.ElideRight
                         }
@@ -236,7 +250,7 @@ ApplicationWindow {
                 id: statusLabel
                 Layout.fillWidth: true
                 text: "ready"
-                color: "#7a8595"
+                color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.6)
                 font.pixelSize: 11
                 elide: Text.ElideRight
                 visible: !root.showOutput
@@ -248,14 +262,14 @@ ApplicationWindow {
                 visible: root.showOutput
                 clip: true
                 background: Rectangle {
-                    color: Qt.rgba(0, 0, 0, 0.35)
+                    color: Qt.rgba(palette.shadow.r, palette.shadow.g, palette.shadow.b, 0.35)
                     radius: 4
                 }
                 TextArea {
                     id: outputArea
                     readOnly: true
                     wrapMode: TextArea.Wrap
-                    color: "#e8eef5"
+                    color: palette.text
                     font.family: "monospace"
                     font.pixelSize: 12
                     background: null
