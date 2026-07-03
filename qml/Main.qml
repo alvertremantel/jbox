@@ -30,16 +30,11 @@ ApplicationWindow {
     // Reposition on completion, when the window becomes visible, and on a
     // slow safety timer (catches hot-plug of monitors).
     function _reposition() {
-        if (!visible) return
-        // `Screen` is the QML attached property that exposes the screen the
-        // window is currently on. desktopAvailableX/Y/W/H account for any
-        // system bars (panel, dock) and are the right thing to anchor to.
-        var ax = Screen.virtualX || 0
-        var ay = Screen.virtualY || 0
-        var aw = (Screen.desktopAvailableWidth  || (Screen.width  || 1024))
-        var ah = (Screen.desktopAvailableHeight || (Screen.height || 768))
-        // Some platforms report available geometry as an offset origin; use
-        // virtualX/Y + the available extent for a robust bottom-left.
+        var s = Qt.application.screens.length > 0 ? Qt.application.screens[0] : null
+        var ax = s ? s.virtualX : 0
+        var ay = s ? s.virtualY : 0
+        var aw = s ? s.desktopAvailableWidth : 1024
+        var ah = s ? s.desktopAvailableHeight : 768
         var availBottom = ay + ah
         var availRight = ax + aw
         var m = 16
@@ -50,7 +45,13 @@ ApplicationWindow {
         root.y = availBottom - root.height - m
     }
     onScreenChanged: _reposition()
-    onVisibleChanged: _reposition()
+    onVisibleChanged: {
+        _reposition()
+        if (visible) {
+            root.requestActivate()
+            input.forceActiveFocus()
+        }
+    }
     Component.onCompleted: _reposition()
 
     // Cheap safety net for monitor hot-plug (connect/disconnect events
@@ -98,8 +99,6 @@ ApplicationWindow {
         // Opaque: KWin's blur-behind region is the window's full rectangle,
         // so a rounded/translucent border here leaves the corners showing
         // raw blurred wallpaper with no panel tint over them.
-        border.color: Qt.rgba(palette.mid.r, palette.mid.g, palette.mid.b, 0.75)
-        border.width: 1
 
         ColumnLayout {
             id: column
@@ -108,6 +107,14 @@ ApplicationWindow {
             spacing: 8
 
             // --- Input row -------------------------------------------------
+            Label {
+                Layout.fillWidth: true
+                text: "Type a command…  |  Enter=terminal  |  Shift+Enter=capture  |  Esc=hide"
+                color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.6)
+                font.pixelSize: 11
+                visible: input.text.length === 0
+            }
+
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
@@ -123,7 +130,6 @@ ApplicationWindow {
                 TextField {
                     id: input
                     Layout.fillWidth: true
-                    placeholderText: "Type a command…  Enter=terminal · Shift+Enter=capture · Esc=hide"
                     font.pixelSize: 16
                     selectByMouse: true
                     background: Rectangle {

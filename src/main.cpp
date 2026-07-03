@@ -29,6 +29,9 @@ QString historyPath() { return configDir() + QStringLiteral("/history.json"); }
 }
 
 int main(int argc, char *argv[]) {
+    // Wayland does not allow top-level windows to position themselves.
+    // Force X11/XWayland so that our bottom-left coordinates are respected.
+    qputenv("QT_QPA_PLATFORM", "xcb");
     QGuiApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("jbox"));
     QCoreApplication::setApplicationName(QStringLiteral("jbox"));
