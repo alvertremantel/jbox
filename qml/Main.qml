@@ -187,7 +187,7 @@ ApplicationWindow {
                             if (root.selectedSuggestion >= 0
                                 && root.selectedSuggestion < root.visibleSuggestions.length) {
                                 var s = root.visibleSuggestions[root.selectedSuggestion]
-                                if (s.command !== undefined) {
+                                if (s.name !== undefined) {
                                     // Alias suggestion
                                     input.text = s.name
                                 } else {
@@ -225,8 +225,8 @@ ApplicationWindow {
                     contentItem: RowLayout {
                         spacing: 8
                         Label {
-                            text: modelData.command !== undefined ? "★" : "↻"
-                            color: modelData.command !== undefined
+                            text: modelData.name !== undefined ? "★" : "↻"
+                            color: modelData.name !== undefined
                                 ? palette.highlight
                                 : Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.7)
                             font.pixelSize: 12
@@ -234,7 +234,7 @@ ApplicationWindow {
                         }
                         Label {
                             Layout.fillWidth: true
-                            text: modelData.command !== undefined
+                            text: modelData.name !== undefined
                                 ? (modelData.name + "  →  " + modelData.command)
                                 : (modelData.command + "  (" + modelData.count + "×)")
                             color: palette.text
@@ -243,7 +243,7 @@ ApplicationWindow {
                         }
                     }
                     onClicked: {
-                        if (modelData.command !== undefined) {
+                        if (modelData.name !== undefined) {
                             input.text = modelData.name
                         } else {
                             input.text = modelData.command
